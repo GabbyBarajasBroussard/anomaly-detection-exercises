@@ -11,14 +11,13 @@ import os
 from env import host, user, password
 
 
-# In[3]:
-
+########################################################################################################################################################################### 
 
 def get_connection(db, user=user, host=host, password=password):
     return f'mysql+pymysql://{user}:{password}@{host}/{db}'
 
 
-# In[25]:
+########################################################################################################################################################################### 
 
 
 def get_log_data():
@@ -35,8 +34,7 @@ LEFT JOIN cohorts ON logs.cohort_id = cohorts.id; ''', get_connection('curriculu
         # Return the dataframe to the calling code
         return df
 
-
-# In[48]:
+###########################################################################################################################################################################    
 
 
 def clean_log_data():
@@ -64,9 +62,195 @@ def clean_log_data():
     df['cohort'].astype(str)
     return df
 
+########################################################################################################################################################################### 
+def get_zillow_data():
+    '''This function will connect to the Codeup Student Database. It will then cache a local copy to the computer to use for later
+        in the form of a CSV file. If you want to reproduce the results, you will need your own env.py file and database credentials.'''
+    filename = "zillow_db.csv"
+    if os.path.isfile(filename):
+        return pd.read_csv(filename)
+    else:
+        # read the SQL query into a dataframe
+        df = pd.read_sql('''
+SELECT prop.*, 
+       pred.logerror, 
+       pred.transactiondate, 
+       air.airconditioningdesc, 
+       arch.architecturalstyledesc, 
+       build.buildingclassdesc, 
+       heat.heatingorsystemdesc, 
+       landuse.propertylandusedesc, 
+       story.storydesc, 
+       construct.typeconstructiondesc 
+FROM   properties_2017 prop  
+       INNER JOIN (SELECT parcelid,
+                          logerror,
+                          Max(transactiondate) transactiondate 
+                   FROM   predictions_2017 
+                   GROUP  BY parcelid, logerror) pred
+               USING (parcelid) 
+       LEFT JOIN airconditioningtype air USING (airconditioningtypeid) 
+       LEFT JOIN architecturalstyletype arch USING (architecturalstyletypeid) 
+       LEFT JOIN buildingclasstype build USING (buildingclasstypeid) 
+       LEFT JOIN heatingorsystemtype heat USING (heatingorsystemtypeid) 
+       LEFT JOIN propertylandusetype landuse USING (propertylandusetypeid) 
+       LEFT JOIN storytype story USING (storytypeid) 
+       LEFT JOIN typeconstructiontype construct USING (typeconstructiontypeid) 
+WHERE  prop.latitude IS NOT NULL 
+       AND prop.longitude IS NOT NULL
+       AND (propertylandusetypeid IN (261, 262, 263, 264, 268, 273, 274, 276, 279));
+            ''' , get_connection('zillow'))
+        # Write that dataframe to disk for later. Called "caching" the data for later.
+        df.to_csv('zillow_db.csv')
+        # Return the dataframe to the calling code
+        return df
+###########################################################################################################################################################################    
+def wrangle_zillow():
+    
+    '''
+    This function acquires the Zillow data from Codeup's database on the MySQL server.  
+    
+    It then prepares the data by removing columns and rows that are missing more than 50% of the 
+    data, restricts the dataframe to include only single unit properties, with at least one
+    bedroom and bathroom and at least 500 square feet, adds a column to indicate county (based on 
+    fips), drops any unnecessary columns, adjusts for outliers in taxvaluedollarcnt and
+    calculatedfinishedsquarefeet, fills missing values in buildinglotsize and buildingquality with 
+    median values, and renames columns to user-friendly titles.
+    '''
+    df = pd.read_csv('zillow_db.csv', index_col=0)
+    
+    #change fips to int
+    df.fips = df.fips.astype(int)
+    
+    # Restrict df to only properties that meet single unit use criteria
+    single_use = [261, 262, 263, 264, 266, 268, 273, 276, 279]
+    df = df[df.propertylandusetypeid.isin(single_use)]
+    
+    # Restrict df to only those properties with at least 1 bath & bed and 500 sqft area
+    df = df[(df.bedroomcnt > 0) & (df.bathroomcnt > 0) & ((df.unitcnt<=1)|df.unitcnt.isnull())\
+            & (df.calculatedfinishedsquarefeet>=500)]
 
-# In[ ]:
+    # Handle missing values i.e. drop columns and rows based on a threshold
+    df = handle_missing_values(df)
+    
+    # Add column for counties
+    df['county'] = np.where(df.fips == 6037, 'Los_Angeles',
+                           np.where(df.fips == 6059, 'Orange', 
+                                   'Ventura'))    
+    # drop columns not needed
+    df = df.drop(columns = ['id','calculatedbathnbr', 'finishedsquarefeet12', 'fullbathcnt', 'heatingorsystemtypeid'
+       ,'propertycountylandusecode', 'propertylandusetypeid','propertyzoningdesc', 
+        'censustractandblock', 'rawcensustractandblock',  'propertylandusedesc'])
+
+    # replace nulls in unitcnt with 1
+    df.unitcnt.fillna(1, inplace = True)
+    
+    # assume that since this is Southern CA, null means 'None' for heating system
+    df.heatingorsystemdesc.fillna('None', inplace = True)
+    
+    # replace nulls with median values for select columns
+    df.lotsizesquarefeet.fillna(7313, inplace = True)
+    df.buildingqualitytypeid.fillna(6.0, inplace = True)
+
+    # Columns to look for outliers
+    df = df[df.taxvaluedollarcnt < 5_000_000]
+    df[df.calculatedfinishedsquarefeet < 8000]
+    
+    # Just to be sure we caught all nulls, drop them here
+    df = df.dropna()
+   
+    #recalculate yearbuilt to age of home:
+    df.yearbuilt = 2017 - df.yearbuilt 
+    #rename columns:
+    df.rename(columns={'taxvaluedollarcounty':'tax_value', 'bedroomcnt':'bedrooms', 'bathroomcnt':'bathrooms', 'calculatedfinishedsquarefeet':
+                      'square_feet', 'lotsizesquarefeet':'lot_size', 'buildingqualitytypeid':'buildingquality', 'yearbuilt':'age', 'taxvaluedollarcnt': 'tax_value', 'landtaxvaluedollarcnt': 'land_tax_value', 'unitcnt': 'unit_count', 'heatingorsystemdesc': 'heating_system', 'structuretaxvaluedollarcnt': 'structure_tax_value'}, inplace=True)
+    
+        
+    
+    
+    df['age_bin'] = pd.cut(df.age, 
+                           bins = [0, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140],
+                           labels = ["0-5","5-10","10-20","20-30", "30-40", "40-50", "50-60", "60-70", "70-80", 
+                                     "80-90", "90-100", "100-110", "110-120", "120-130", "130-140"])
+
+    # create taxrate variable
+    df['taxrate'] = df.taxamount/df.tax_value*100
+
+    # create acres variable
+    df['acres'] = df.lot_size/43560
+
+    # bin acres
+    df['acres_bin'] = pd.cut(df.acres, bins = [0, .10, .15, .25, .5, 1, 5, 10, 20, 50, 200], 
+                       labels = [0, .1, .2, .3, .4, .5, .6, .7, .8, .9])
+
+    # bin tax value
+    df['tax_value_bin'] = pd.cut(df.tax_value, bins = [0, 80000, 150000, 225000, 300000, 350000, 450000, 550000, 650000, 900000, 5000000], labels = ["< $80,000","$150,000", "$225,000", "$300,000", "$350,000", "$450,000", '$550,000', "$650,000", "$900,000", "$5,000,000"])
+    
+    #bin land_tax_value
+    df['land_tax_value_bin'] = pd.cut(df.land_tax_value, bins = [0, 50000, 100000, 150000, 200000, 250000,350000, 450000, 650000, 800000, 1000000], labels = ["< $50,000","$100,000", "$150,000", "$200,000", "$250,000", "$350,000", '$450,000', "$650,000", "$800,000", "$1,000,000"])
+    
+    # square feet bin
+    df['sqft_bin'] = pd.cut(df.square_feet, 
+                            bins = [0, 800, 1000, 1250, 1500, 2000, 2500, 3000, 4000, 7000, 12000],
+                            labels = [0, .1, .2, .3, .4, .5, .6, .7, .8, .9]
+                       )
+
+    # dollar per square foot-structure
+    df['structure_dollar_per_sqft'] = df.structure_tax_value/df.square_feet
 
 
+    df['structure_dollar_sqft_bin'] = pd.cut(df.structure_dollar_per_sqft, 
+                                             bins = [0, 25, 50, 75, 100, 150, 200, 300, 500, 1000, 1500],
+                                             labels = [0, .1, .2, .3, .4, .5, .6, .7, .8, .9]
+                                            )
 
+
+    # dollar per square foot-land
+    df['land_dollar_per_sqft'] = df.land_tax_value/df.lot_size
+
+    df['lot_dollar_sqft_bin'] = pd.cut(df.land_dollar_per_sqft, bins = [0, 1, 5, 20, 50, 100, 250, 500, 1000, 1500, 2000],
+                                       labels = ['0', '1', '5-19', '20-49', '50-99', '100-249', '250-499', '500-999', '1000-1499', '1500-2000']
+                                      )
+
+
+    # update datatypes of binned values to be float
+    df = df.astype({'sqft_bin': 'float64', 'acres_bin': 'float64', 
+                    'structure_dollar_sqft_bin': 'float64'})
+
+
+    # ratio of bathrooms to bedrooms
+    df['bath_bed_ratio'] = df.bathrooms/df.bedrooms
+
+    # 12447 is the ID for city of LA. 
+    # I confirmed through sampling and plotting, as well as looking up a few addresses.
+    df['cola'] = df['regionidcity'].apply(lambda x: 1 if x == 12447.0 else 0)
+    
+    df = df.drop(columns=['parcelid', 'buildingquality', 'county', 'lot_size', 'regionidcity',
+       'regionidcounty', 'regionidzip', 'roomcnt', 'unit_count', 'assessmentyear', 'transactiondate', 'heating_system'])
+  
+    
+    return df [((df.bathrooms <= 7) & (df.bedrooms <= 7) &
+               (df.bathrooms >= 1) & 
+               (df.bedrooms >= 1) & 
+               (df.acres <= 20) &
+               (df.square_feet <= 9000) & 
+               (df.taxrate <= 10)
+              )]
+###########################################################################################################################################################################    
+def get_grocery_data():
+    '''This function will connect to the Codeup Student Database. It will then cache a local copy to the computer to use for later
+        in the form of a CSV file. If you want to reproduce the results, you will need your own env.py file and database credentials.'''
+    filename = "zillow_db.csv"
+    if os.path.isfile(filename):
+        return pd.read_csv(filename)
+    else:
+        # read the SQL query into a dataframe
+        df = pd.read_sql('''
+select *
+from grocery_customers
+''' , get_connection('grocery_db', index_col="customer_id"))
+        # Write that dataframe to disk for later. Called "caching" the data for later.
+        df.to_csv('grocery_db.csv')
+        # Return the dataframe to the calling code
+        return df
 

@@ -193,7 +193,7 @@ def wrangle_zillow():
 def get_grocery_data():
     '''This function will connect to the Codeup Student Database. It will then cache a local copy to the computer to use for later
         in the form of a CSV file. If you want to reproduce the results, you will need your own env.py file and database credentials.'''
-    filename = "zillow_db.csv"
+    filename = "grocery_db.csv"
     if os.path.isfile(filename):
         return pd.read_csv(filename)
     else:

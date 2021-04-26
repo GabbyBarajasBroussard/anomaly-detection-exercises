@@ -117,7 +117,7 @@ def wrangle_zillow():
     calculatedfinishedsquarefeet, fills missing values in buildinglotsize and buildingquality with 
     median values, and renames columns to user-friendly titles.
     '''
-    df = pd.read_csv('zillow_db.csv', index_col=0)
+    df = get_zillow_data()
     
     #change fips to int
     df.fips = df.fips.astype(int)
@@ -201,9 +201,52 @@ def get_grocery_data():
         df = pd.read_sql('''
 select *
 from grocery_customers
-''' , get_connection('grocery_db'))
+''' , get_connection('grocery_db'), index_col="customer_id")
         # Write that dataframe to disk for later. Called "caching" the data for later.
         df.to_csv('grocery_db.csv')
         # Return the dataframe to the calling code
         return df
+    
+###########################################################################################################################################################################
 
+def handle_missing_values(df, prop_required_column = .5, prop_required_row = .70):
+    '''
+    This function takes in: a dataframe, the proportion (0-1) of rows (for each column) with non-missing values required to keep 
+    the column, and the proportion (0-1) of columns/variables with non-missing values required to keep each row.  
+    
+    It returns the dataframe with the columns and rows dropped as indicated. 
+    '''
+    threshold = int(round(prop_required_column*len(df.index),0))
+    df.dropna(axis=1, thresh=threshold, inplace=True)
+    threshold = int(round(prop_required_row*len(df.columns),0))
+    df.dropna(axis=0, thresh=threshold, inplace=True)
+    return df
+
+###########################################################################################################################################################################
+
+def nulls_by_col(df):
+    '''
+    This function takes in a dataframe of observations and attributes and returns a dataframe where each row is an attribute name, 
+    the first column is the number of rows with missing values for that attribute, and the second column is percent of total rows 
+    that have missing values for that attribute. 
+    '''
+    
+    num_missing = df.isnull().sum()
+    rows = df.shape[0]
+    pct_missing = num_missing / rows
+    cols_missing = pd.DataFrame({'number_missing_rows': num_missing, 'percent_rows_missing': pct_missing})
+    return cols_missing
+
+###########################################################################################################################################################################
+
+def cols_missing(df):
+    '''
+    This function takes in a dataframe and returns a dataframe with 3 columns: the number of columns missing, 
+    percent of columns missing, and number of rows with n columns missing. 
+    '''
+    
+    df2 = pd.DataFrame(df.isnull().sum(axis =1), columns = ['num_cols_missing']).reset_index()\
+    .groupby('num_cols_missing').count().reset_index().\
+    rename(columns = {'index': 'num_rows' })
+    df2['pct_cols_missing'] = df2.num_cols_missing/df.shape[1]
+    return df2

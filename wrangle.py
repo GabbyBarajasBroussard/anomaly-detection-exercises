@@ -164,59 +164,18 @@ def wrangle_zillow():
     #rename columns:
     df.rename(columns={'taxvaluedollarcounty':'tax_value', 'bedroomcnt':'bedrooms', 'bathroomcnt':'bathrooms', 'calculatedfinishedsquarefeet':
                       'square_feet', 'lotsizesquarefeet':'lot_size', 'buildingqualitytypeid':'buildingquality', 'yearbuilt':'age', 'taxvaluedollarcnt': 'tax_value', 'landtaxvaluedollarcnt': 'land_tax_value', 'unitcnt': 'unit_count', 'heatingorsystemdesc': 'heating_system', 'structuretaxvaluedollarcnt': 'structure_tax_value'}, inplace=True)
-    
-        
-    
-    
-    df['age_bin'] = pd.cut(df.age, 
-                           bins = [0, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140],
-                           labels = ["0-5","5-10","10-20","20-30", "30-40", "40-50", "50-60", "60-70", "70-80", 
-                                     "80-90", "90-100", "100-110", "110-120", "120-130", "130-140"])
 
     # create taxrate variable
-    df['taxrate'] = df.taxamount/df.tax_value*100
+    df['tax_rate'] = df.taxamount/df.tax_value*100
 
     # create acres variable
     df['acres'] = df.lot_size/43560
-
-    # bin acres
-    df['acres_bin'] = pd.cut(df.acres, bins = [0, .10, .15, .25, .5, 1, 5, 10, 20, 50, 200], 
-                       labels = [0, .1, .2, .3, .4, .5, .6, .7, .8, .9])
-
-    # bin tax value
-    df['tax_value_bin'] = pd.cut(df.tax_value, bins = [0, 80000, 150000, 225000, 300000, 350000, 450000, 550000, 650000, 900000, 5000000], labels = ["< $80,000","$150,000", "$225,000", "$300,000", "$350,000", "$450,000", '$550,000', "$650,000", "$900,000", "$5,000,000"])
     
-    #bin land_tax_value
-    df['land_tax_value_bin'] = pd.cut(df.land_tax_value, bins = [0, 50000, 100000, 150000, 200000, 250000,350000, 450000, 650000, 800000, 1000000], labels = ["< $50,000","$100,000", "$150,000", "$200,000", "$250,000", "$350,000", '$450,000', "$650,000", "$800,000", "$1,000,000"])
-    
-    # square feet bin
-    df['sqft_bin'] = pd.cut(df.square_feet, 
-                            bins = [0, 800, 1000, 1250, 1500, 2000, 2500, 3000, 4000, 7000, 12000],
-                            labels = [0, .1, .2, .3, .4, .5, .6, .7, .8, .9]
-                       )
-
     # dollar per square foot-structure
     df['structure_dollar_per_sqft'] = df.structure_tax_value/df.square_feet
 
-
-    df['structure_dollar_sqft_bin'] = pd.cut(df.structure_dollar_per_sqft, 
-                                             bins = [0, 25, 50, 75, 100, 150, 200, 300, 500, 1000, 1500],
-                                             labels = [0, .1, .2, .3, .4, .5, .6, .7, .8, .9]
-                                            )
-
-
     # dollar per square foot-land
     df['land_dollar_per_sqft'] = df.land_tax_value/df.lot_size
-
-    df['lot_dollar_sqft_bin'] = pd.cut(df.land_dollar_per_sqft, bins = [0, 1, 5, 20, 50, 100, 250, 500, 1000, 1500, 2000],
-                                       labels = ['0', '1', '5-19', '20-49', '50-99', '100-249', '250-499', '500-999', '1000-1499', '1500-2000']
-                                      )
-
-
-    # update datatypes of binned values to be float
-    df = df.astype({'sqft_bin': 'float64', 'acres_bin': 'float64', 
-                    'structure_dollar_sqft_bin': 'float64'})
-
 
     # ratio of bathrooms to bedrooms
     df['bath_bed_ratio'] = df.bathrooms/df.bedrooms
@@ -229,13 +188,7 @@ def wrangle_zillow():
        'regionidcounty', 'regionidzip', 'roomcnt', 'unit_count', 'assessmentyear', 'transactiondate', 'heating_system'])
   
     
-    return df [((df.bathrooms <= 7) & (df.bedrooms <= 7) &
-               (df.bathrooms >= 1) & 
-               (df.bedrooms >= 1) & 
-               (df.acres <= 20) &
-               (df.square_feet <= 9000) & 
-               (df.taxrate <= 10)
-              )]
+    return df
 ###########################################################################################################################################################################    
 def get_grocery_data():
     '''This function will connect to the Codeup Student Database. It will then cache a local copy to the computer to use for later
@@ -248,7 +201,7 @@ def get_grocery_data():
         df = pd.read_sql('''
 select *
 from grocery_customers
-''' , get_connection('grocery_db', index_col="customer_id"))
+''' , get_connection('grocery_db'))
         # Write that dataframe to disk for later. Called "caching" the data for later.
         df.to_csv('grocery_db.csv')
         # Return the dataframe to the calling code

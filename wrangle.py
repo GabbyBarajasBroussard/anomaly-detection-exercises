@@ -117,7 +117,7 @@ def wrangle_zillow():
     calculatedfinishedsquarefeet, fills missing values in buildinglotsize and buildingquality with 
     median values, and renames columns to user-friendly titles.
     '''
-    df = gpd.read_csv('zillow_db.csv', index_col=0)
+    df = pd.read_csv('zillow_db.csv', index_col=0)
     
     #change fips to int
     df.fips = df.fips.astype(int)

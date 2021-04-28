@@ -54,12 +54,13 @@ def clean_log_data():
     df['weekday'] = df.datetime.dt.day_name()
     df = df.astype(object)
     df = df.set_index('datetime')
-    
-    # drop date time columns
-    df.drop(columns=['id', 'slack', 'cohort_id','program_id', 'start_date', 'deleted_at', 'end_date', 'created_at', 'updated_at'], inplace = True)
     #rename cohort column
     df= df.rename(columns = {'name': 'cohort'})
     df['cohort'].astype(str)
+    df['is_data_science'] = (df.cohort.str.contains('Ada') | df.cohort.str.contains('Bayes') | df.cohort.str.contains('Curie') | df.cohort.str.contains('Darden') | df.cohort.str.contains('Easley')| df.cohort.str.contains('florence')) 
+    # drop date time columns
+    df.drop(columns=['slack','program_id', 'start_date', 'deleted_at', 'end_date', 'created_at', 'updated_at'], inplace = True)
+    
     return df
 
 ########################################################################################################################################################################### 
